@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+<title>Palpebra — On-Device Pallor Model</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,400;0,500;0,600;0,700;1,500&family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #E6E8E1; --surface: #FAFAF7; --surface-alt: #EFF0EA;
+    --ink: #1E2420; --ink-muted: #626B60;
+    --accent: #8A1F2E; --accent-pale: #D8CCC0; --border: #D6D9CE;
+    --risk-low: #2E6B7A; --risk-med: #A87830; --risk-high: #8A1F2E;
+    --font-display: 'Newsreader', Georgia, 'Times New Roman', serif;
+    --font-body: 'Archivo', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141713; --surface: #1C201A; --surface-alt: #232720;
+      --ink: #EDEFE8; --ink-muted: #A3AC9C;
+      --accent: #E8899A; --accent-pale: #4A423A; --border: #303528;
+      --risk-low: #6FB2C2; --risk-med: #D9A85C; --risk-high: #E8899A;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #141713; --surface: #1C201A; --surface-alt: #232720;
+    --ink: #EDEFE8; --ink-muted: #A3AC9C;
+    --accent: #E8899A; --accent-pale: #4A423A; --border: #303528;
+    --risk-low: #6FB2C2; --risk-med: #D9A85C; --risk-high: #E8899A;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--ink); font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased; line-height: 1.5;
+  }
+  .app { max-width: 480px; margin: 0 auto; padding: 26px 20px 48px; }
+  header { margin-bottom: 20px; }
+  .eyebrow { font-size: 13px; color: var(--ink-muted); margin: 0 0 6px; }
+  h1 {
+    font-family: var(--font-display); font-weight: 600; font-size: 32px;
+    line-height: 1.1; margin: 0 0 10px; letter-spacing: -0.01em;
+  }
+  .lede { color: var(--ink-muted); font-size: 15px; max-width: 36ch; margin: 0; }
+
+  .steps { display: flex; gap: 18px; margin: 22px 0 16px; }
+  .step-item { font-size: 12.5px; color: var(--ink-muted); position: relative; padding-left: 14px; }
+  .step-item::before {
+    content: ""; position: absolute; left: 0; top: 4px; width: 7px; height: 7px;
+    border-radius: 50%; background: var(--border);
+  }
+  .step-item.done::before { background: var(--ink-muted); }
+  .step-item.active { color: var(--ink); font-weight: 600; }
+  .step-item.active::before { background: var(--accent); }
+
+  .stage { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 16px; margin-bottom: 16px; }
+  .viewport {
+    position: relative; width: 100%; aspect-ratio: 4/3; background: #000;
+    border-radius: 13px; overflow: hidden; display: flex; align-items: center; justify-content: center;
+  }
+  .viewport video, .viewport canvas.frame { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .viewport video { transform: scaleX(-1); }
+  .viewport canvas.frame { display: none; }
+  .guide {
+    position: absolute; top: 50%; left: 50%; width: 58%; height: 34%;
+    transform: translate(-50%, -50%); border: 2px solid rgba(255,255,255,0.85);
+    border-radius: 50%; box-shadow: 0 0 0 1000px rgba(0,0,0,0.35); pointer-events: none;
+  }
+  .placeholder-msg { color: rgba(255,255,255,0.72); font-size: 14px; text-align: center; padding: 0 26px; }
+  .live-chips {
+    position: absolute; top: 10px; left: 10px; right: 10px; z-index: 3;
+    display: flex; justify-content: space-between; gap: 8px;
+  }
+  .chip {
+    font-size: 11.5px; padding: 5px 10px; border-radius: 999px;
+    background: rgba(0,0,0,0.5); color: #fff; backdrop-filter: blur(6px);
+  }
+  .chip[data-state="warn"] { background: rgba(168,120,48,0.75); }
+  .swatch-chip {
+    display: flex; align-items: center; gap: 6px; font-size: 11.5px;
+    padding: 5px 10px; border-radius: 999px; background: rgba(0,0,0,0.5); color: #fff; backdrop-filter: blur(6px);
+  }
+  .swatch-dot { width: 12px; height: 12px; border-radius: 50%; background: #888; border: 1px solid rgba(255,255,255,0.6); }
+
+  .hint { font-size: 13px; color: var(--ink-muted); margin: 12px 2px 14px; }
+  .controls { display: flex; gap: 10px; flex-wrap: wrap; position: relative; }
+  button, label.primary {
+    font-family: var(--font-body); font-size: 14.5px; font-weight: 600;
+    padding: 12px 18px; border-radius: 11px; border: 1px solid var(--border);
+    background: var(--surface-alt); color: var(--ink); cursor: pointer; flex: 1; min-width: 130px;
+    display: inline-flex; align-items: center; justify-content: center; text-align: center;
+  }
+  button.primary, label.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button:focus-visible, label.primary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type="file"] { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+  .error-msg strong { color: #ffb443; }
+
+  .results { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 20px; margin-bottom: 16px; }
+  .results[hidden] { display: none; }
+  .ring-row { display: flex; align-items: center; gap: 18px; margin-bottom: 20px; }
+  .ring { width: 100px; height: 100px; flex-shrink: 0; }
+  .ring-track { fill: none; stroke: var(--border); stroke-width: 10; }
+  .ring-fill {
+    fill: none; stroke-width: 10; stroke-linecap: round;
+    stroke-dasharray: 326.7; stroke-dashoffset: 326.7;
+    transform: rotate(-90deg); transform-origin: 60px 60px;
+    transition: stroke-dashoffset 0.9s cubic-bezier(.2,.8,.2,1);
+  }
+  .ring-fill.low { stroke: var(--risk-low); }
+  .ring-fill.med { stroke: var(--risk-med); }
+  .ring-fill.high { stroke: var(--risk-high); }
+  .ring-wrap { position: relative; width: 100px; height: 100px; flex-shrink: 0; }
+  .ring-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .ring-pct { font-family: var(--font-display); font-size: 21px; font-weight: 600; }
+  .ring-label { font-size: 9px; color: var(--ink-muted); max-width: 60px; text-align: center; line-height: 1.2; margin-top: 2px; }
+  .risk-copy { flex: 1; }
+  .risk-label { font-family: var(--font-display); font-size: 21px; font-weight: 600; margin: 0 0 4px; }
+  .risk-label.low { color: var(--risk-low); }
+  .risk-label.med { color: var(--risk-med); }
+  .risk-label.high { color: var(--risk-high); }
+  .risk-explain { font-size: 13.5px; color: var(--ink-muted); margin: 0; }
+
+  .features { border-top: 1px solid var(--border); padding-top: 16px; margin-bottom: 16px; }
+  .features-title { font-size: 12px; color: var(--ink-muted); margin: 0 0 12px; }
+  .feature-row { display: grid; grid-template-columns: 108px 1fr 44px; align-items: center; gap: 10px; margin-bottom: 9px; font-size: 12.5px; }
+  .feature-row span { color: var(--ink-muted); }
+  .bar { height: 6px; border-radius: 4px; background: var(--surface-alt); overflow: hidden; }
+  .bar-fill { height: 100%; width: 0%; background: var(--accent); border-radius: 4px; transition: width 0.8s cubic-bezier(.2,.8,.2,1); }
+  .feature-row b { font-variant-numeric: tabular-nums; text-align: right; font-weight: 600; }
+
+  .disclaimer {
+    background: var(--surface-alt); border-left: 3px solid var(--accent);
+    border-radius: 8px; padding: 12px 14px; font-size: 13px; color: var(--ink);
+  }
+  .disclaimer strong { display: block; margin-bottom: 3px; }
+
+  .about { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 4px 16px; margin-bottom: 16px; }
+  .about summary { padding: 12px 0; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .about-body { padding: 0 0 16px; font-size: 13.5px; color: var(--ink-muted); line-height: 1.6; }
+  .about-body p { margin: 0 0 10px; }
+  .about-body p:last-child { margin-bottom: 0; }
+
+  footer { text-align: center; font-size: 12.5px; color: var(--ink-muted); margin-top: 22px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ring-fill, .bar-fill { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <p class="eyebrow">On-device pallor model</p>
+    <h1>Palpebra</h1>
+    <p class="lede">Reads conjunctival pallor from a phone camera — the sign clinicians already check by eye — and scores anemia risk with a lightweight on-device model.</p>
+  </header>
+
+  <div class="steps">
+    <span class="step-item active" data-n="1">Position</span>
+    <span class="step-item" data-n="2">Capture</span>
+    <span class="step-item" data-n="3">Result</span>
+  </div>
+
+  <div class="stage">
+    <div class="viewport" id="viewport">
+      <video id="video" autoplay playsinline webkit-playsinline muted></video>
+      <canvas class="frame" id="frameCanvas"></canvas>
+      <div class="placeholder-msg" id="placeholderMsg"><p>Start the camera or upload a photo of your pulled-down lower eyelid.</p></div>
+      <div class="guide" id="guide" hidden></div>
+      <div class="live-chips" id="liveChips" hidden>
+        <div class="chip" id="qualityChip" data-state="ok">Reading light…</div>
+        <div class="swatch-chip"><span class="swatch-dot" id="liveSwatch"></span>Live tone</div>
+      </div>
+    </div>
+    <p class="hint" id="hint">Gently pull your lower lid down and hold the pink inner surface inside the oval, in good light.</p>
+    <div class="controls" id="preCaptureControls">
+      <button id="startCamBtn">Use camera</button>
+      <label class="primary" id="uploadBtn" for="fileInput">Upload photo</label>
+      <input type="file" id="fileInput" accept="image/*">
+    </div>
+    <div class="controls" id="captureControls" hidden>
+      <button class="primary" id="captureBtn">Capture</button>
+      <button id="cancelBtn">Cancel</button>
+    </div>
+    <div class="controls" id="postCaptureControls" hidden>
+      <button id="retakeBtn">Retake</button>
+      <button class="primary" id="analyzeBtn">Run model</button>
+    </div>
+  </div>
+
+  <div class="results" id="results" hidden>
+    <div class="ring-row">
+      <div class="ring-wrap">
+        <svg class="ring" viewBox="0 0 120 120">
+          <circle class="ring-track" cx="60" cy="60" r="52" />
+          <circle class="ring-fill" id="ringFill" cx="60" cy="60" r="52" />
+        </svg>
+        <div class="ring-center">
+          <span class="ring-pct" id="ringPct">–</span>
+          <span class="ring-label">pallor probability</span>
+        </div>
+      </div>
+      <div class="risk-copy">
+        <p class="risk-label" id="riskLabel">–</p>
+        <p class="risk-explain" id="riskExplain"></p>
+      </div>
+    </div>
+
+    <div class="features">
+      <p class="features-title">Signals feeding the model</p>
+      <div class="feature-row"><span>a* (red–green axis)</span><div class="bar"><div class="bar-fill" id="barA"></div></div><b id="valA">–</b></div>
+      <div class="feature-row"><span>Saturation</span><div class="bar"><div class="bar-fill" id="barSat"></div></div><b id="valSat">–</b></div>
+      <div class="feature-row"><span>Redness ratio</span><div class="bar"><div class="bar-fill" id="barRed"></div></div><b id="valRed">–</b></div>
+    </div>
+
+    <div class="disclaimer">
+      <strong>Screening signal, not a diagnosis.</strong>
+      Color alone doesn't confirm anemia. If this reads medium or high, get an actual CBC blood test — don't treat this reading as a result.
+    </div>
+  </div>
+
+  <details class="about">
+    <summary>How this model works</summary>
+    <div class="about-body">
+      <p>Three color signals come out of the captured region — the CIELAB a* channel (the red–green axis), HSV saturation, and a redness ratio — and run through a logistic model, the same baseline class published anemia-detection research compares against deep learning. The weights here are provisional starting values, not fitted to patient data yet.</p>
+      <p>To make it real: CP-AnemiC is a public dataset of 710 annotated conjunctival images from children in Ghana with lab-confirmed hemoglobin levels, built for exactly this task. A 2025 study quantized a MobileNet model trained on it down to FP16 for edge deployment and held over 92% accuracy — proof this class of model runs on-device, not just in a lab. Swap the weights below for coefficients fitted on real data and the architecture doesn't change.</p>
+    </div>
+  </details>
+
+  <footer>All capture and scoring run in this browser. No image leaves this device.</footer>
+</div>
+
+<script>
+(function () {
+  const video = document.getElementById('video');
+  const frameCanvas = document.getElementById('frameCanvas');
+  const guide = document.getElementById('guide');
+  const placeholderMsg = document.getElementById('placeholderMsg');
+  const hint = document.getElementById('hint');
+  const liveChips = document.getElementById('liveChips');
+  const qualityChip = document.getElementById('qualityChip');
+  const liveSwatch = document.getElementById('liveSwatch');
+  const preCaptureControls = document.getElementById('preCaptureControls');
+  const captureControls = document.getElementById('captureControls');
+  const postCaptureControls = document.getElementById('postCaptureControls');
+  const startCamBtn = document.getElementById('startCamBtn');
+  const uploadBtn = document.getElementById('uploadBtn');
+  const fileInput = document.getElementById('fileInput');
+  const captureBtn = document.getElementById('captureBtn');
+  const cancelBtn = document.getElementById('cancelBtn');
+  const retakeBtn = document.getElementById('retakeBtn');
+  const analyzeBtn = document.getElementById('analyzeBtn');
+  const results = document.getElementById('results');
+  const ringFill = document.getElementById('ringFill');
+  const ringPct = document.getElementById('ringPct');
+  const riskLabel = document.getElementById('riskLabel');
+  const riskExplain = document.getElementById('riskExplain');
+  const barA = document.getElementById('barA'), valA = document.getElementById('valA');
+  const barSat = document.getElementById('barSat'), valSat = document.getElementById('valSat');
+  const barRed = document.getElementById('barRed'), valRed = document.getElementById('valRed');
+
+  let stream = null;
+  let liveTimer = null;
+  const RING_CIRC = 2 * Math.PI * 52;
+
+  function setActiveStep(n) {
+    document.querySelectorAll('.step-item').forEach(el => {
+      const en = Number(el.dataset.n);
+      el.classList.toggle('active', en === n);
+      el.classList.toggle('done', en < n);
+    });
+  }
+
+  function setStage(stage) {
+    results.hidden = true;
+    if (stage === 'idle') {
+      preCaptureControls.hidden = false; captureControls.hidden = true; postCaptureControls.hidden = true;
+      guide.hidden = true; liveChips.hidden = true; placeholderMsg.style.display = 'block';
+      video.style.display = 'none'; frameCanvas.style.display = 'none';
+      hint.textContent = 'Gently pull your lower lid down and hold the pink inner surface inside the oval, in good light.';
+      setActiveStep(1);
+    } else if (stage === 'live') {
+      preCaptureControls.hidden = true; captureControls.hidden = false; postCaptureControls.hidden = true;
+      guide.hidden = false; liveChips.hidden = false; placeholderMsg.style.display = 'none';
+      video.style.display = 'block'; frameCanvas.style.display = 'none';
+      hint.textContent = 'Line the inner eyelid up inside the oval — watch the live tone chip shift pink — then capture.';
+      setActiveStep(1);
+    } else if (stage === 'captured') {
+      preCaptureControls.hidden = true; captureControls.hidden = true; postCaptureControls.hidden = false;
+      guide.hidden = false; liveChips.hidden = true; placeholderMsg.style.display = 'none';
+      video.style.display = 'none'; frameCanvas.style.display = 'block';
+      hint.textContent = 'Make sure the oval sits on the pink eyelid surface, not skin — then run the model.';
+      setActiveStep(2);
+    }
+  }
+
+  async function startCamera() {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 540 } }, audio: false
+      });
+      video.srcObject = stream;
+      video.play().catch(() => {});
+      setStage('live');
+      startLiveSampling();
+    } catch (err) {
+      const reason = err && err.name ? err.name : 'blocked';
+      const msg = 'Tap "Upload photo" below instead — it works the same way.';
+      hint.textContent = 'Camera access didn\'t go through (' + reason + '). ' + msg;
+      placeholderMsg.innerHTML = '<p class="error-msg"><strong>Camera blocked here (' + reason + ').</strong><br>' + msg + '</p>';
+      placeholderMsg.style.display = 'block';
+      video.style.display = 'none';
+      guide.hidden = true;
+    }
+  }
+
+  function stopCamera() {
+    stopLiveSampling();
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  }
+
+  function ellipseAverage(ctx, cw, ch) {
+    const cx = cw * 0.5, cy = ch * 0.5, rx = cw * 0.29, ry = ch * 0.17;
+    const x0 = Math.max(0, Math.floor(cx - rx)), y0 = Math.max(0, Math.floor(cy - ry));
+    const w = Math.min(cw - x0, Math.ceil(rx * 2)), h = Math.min(ch - y0, Math.ceil(ry * 2));
+    if (w <= 0 || h <= 0) return null;
+    const data = ctx.getImageData(x0, y0, w, h).data;
+    let sumR = 0, sumG = 0, sumB = 0, n = 0;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const ex = (x - w / 2) / (w / 2), ey = (y - h / 2) / (h / 2);
+        if (ex * ex + ey * ey > 1) continue;
+        const i = (y * w + x) * 4;
+        sumR += data[i]; sumG += data[i + 1]; sumB += data[i + 2]; n++;
+      }
+    }
+    if (n === 0) return null;
+    return { r: sumR / n, g: sumG / n, b: sumB / n };
+  }
+
+  let sampleCanvas = null, sctx = null;
+  function startLiveSampling() {
+    sampleCanvas = document.createElement('canvas');
+    sampleCanvas.width = 160; sampleCanvas.height = 120;
+    sctx = sampleCanvas.getContext('2d', { willReadFrequently: true });
+    liveTimer = setInterval(() => {
+      if (!video.videoWidth) return;
+      sctx.save();
+      sctx.translate(sampleCanvas.width, 0);
+      sctx.scale(-1, 1);
+      sctx.drawImage(video, 0, 0, sampleCanvas.width, sampleCanvas.height);
+      sctx.restore();
+      const avg = ellipseAverage(sctx, sampleCanvas.width, sampleCanvas.height);
+      if (!avg) return;
+      liveSwatch.style.background = `rgb(${avg.r.toFixed(0)}, ${avg.g.toFixed(0)}, ${avg.b.toFixed(0)})`;
+      const brightness = 0.2126 * avg.r + 0.7152 * avg.g + 0.0722 * avg.b;
+      const warn = brightness < 45 || brightness > 225;
+      qualityChip.textContent = brightness < 45 ? 'Too dark' : brightness > 225 ? 'Too bright' : 'Good light';
+      qualityChip.dataset.state = warn ? 'warn' : 'ok';
+    }, 180);
+  }
+  function stopLiveSampling() {
+    if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
+  }
+
+  function drawVideoFrameToCanvas() {
+    const vw = video.videoWidth || 720, vh = video.videoHeight || 540;
+    frameCanvas.width = vw; frameCanvas.height = vh;
+    const ctx = frameCanvas.getContext('2d', { willReadFrequently: true });
+    ctx.translate(vw, 0); ctx.scale(-1, 1);
+    ctx.drawImage(video, 0, 0, vw, vh);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+  }
+
+  function drawImageFileToCanvas(file) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        frameCanvas.width = img.naturalWidth; frameCanvas.height = img.naturalHeight;
+        frameCanvas.getContext('2d', { willReadFrequently: true }).drawImage(img, 0, 0);
+        URL.revokeObjectURL(img.src);
+        resolve();
+      };
+      img.onerror = reject;
+      img.src = URL.createObjectURL(file);
+    });
+  }
+
+  startCamBtn.addEventListener('click', startCamera);
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+    stopCamera();
+    await drawImageFileToCanvas(file);
+    setStage('captured');
+    fileInput.value = '';
+  });
+  captureBtn.addEventListener('click', () => {
+    drawVideoFrameToCanvas(); stopCamera(); setStage('captured');
+  });
+  cancelBtn.addEventListener('click', () => { stopCamera(); setStage('idle'); });
+  retakeBtn.addEventListener('click', () => { stopCamera(); setStage('idle'); });
+
+  // ---- Color science ----
+  function rgbToHsv(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+    let h = 0;
+    if (d !== 0) {
+      if (max === r) h = ((g - b) / d) % 6;
+      else if (max === g) h = (b - r) / d + 2;
+      else h = (r - g) / d + 4;
+      h *= 60; if (h < 0) h += 360;
+    }
+    const s = max === 0 ? 0 : d / max;
+    return [h, s, max];
+  }
+
+  function srgbToLinear(c) { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+
+  function rgbToXyz(r, g, b) {
+    const rl = srgbToLinear(r), gl = srgbToLinear(g), bl = srgbToLinear(b);
+    return [
+      rl * 0.4124564 + gl * 0.3575761 + bl * 0.1804375,
+      rl * 0.2126729 + gl * 0.7151522 + bl * 0.0721750,
+      rl * 0.0193339 + gl * 0.1191920 + bl * 0.9503041
+    ];
+  }
+
+  function xyzToLab(x, y, z) {
+    const xn = 0.95047, yn = 1.0, zn = 1.08883;
+    const f = t => t > 0.008856 ? Math.cbrt(t) : (7.787 * t + 16 / 116);
+    const fx = f(x / xn), fy = f(y / yn), fz = f(z / zn);
+    return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+  }
+
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+  // ---- Logistic pallor model ----
+  // Provisional weights — see "How this model works" for what to replace these with.
+  const WEIGHTS = { a: 0.4, sat: 0.3, red: 0.3, steepness: 6 };
+
+  function scoreModel(r, g, b) {
+    const [, s] = rgbToHsv(r, g, b);
+    const [x, y, z] = rgbToXyz(r, g, b);
+    const [, aStar] = xyzToLab(x, y, z);
+    const total = r + g + b || 1;
+    const rednessRatio = r / total;
+
+    const aSignal = clamp((aStar - 2) / 25, 0, 1);
+    const satSignal = clamp(s / 0.5, 0, 1);
+    const redSignal = clamp((rednessRatio - 0.32) / 0.15, 0, 1);
+
+    const healthiness = WEIGHTS.a * aSignal + WEIGHTS.sat * satSignal + WEIGHTS.red * redSignal;
+    const riskProbability = 1 / (1 + Math.exp(WEIGHTS.steepness * (healthiness - 0.5)));
+
+    return { aStar, s, rednessRatio, aSignal, satSignal, redSignal, riskProbability };
+  }
+
+  function bandFromProbability(p) {
+    if (p < 0.35) return { band: 'Low risk', cls: 'low', explain: 'Signals read close to a well-perfused range. Re-check in a few weeks if you feel fatigued anyway.' };
+    if (p < 0.6) return { band: 'Medium risk', cls: 'med', explain: 'Some pallor relative to a healthy reading. Worth a follow-up CBC, especially with fatigue or dizziness.' };
+    return { band: 'High risk', cls: 'high', explain: 'Reading is noticeably pale. Get a blood test soon — this is a screening flag, not a lab result.' };
+  }
+
+  analyzeBtn.addEventListener('click', () => {
+    const ctx = frameCanvas.getContext('2d', { willReadFrequently: true });
+    const avg = ellipseAverage(ctx, frameCanvas.width, frameCanvas.height);
+    if (!avg) return;
+    const { r, g, b } = avg;
+    const m = scoreModel(r, g, b);
+    const { band, cls, explain } = bandFromProbability(m.riskProbability);
+
+    const pct = clamp(m.riskProbability, 0.02, 0.98);
+    requestAnimationFrame(() => {
+      ringFill.style.strokeDashoffset = (RING_CIRC * (1 - pct)).toFixed(1);
+      ringFill.className = 'ring-fill ' + cls;
+    });
+    ringPct.textContent = Math.round(m.riskProbability * 100) + '%';
+    riskLabel.textContent = band; riskLabel.className = 'risk-label ' + cls;
+    riskExplain.textContent = explain;
+
+    valA.textContent = m.aStar.toFixed(1);
+    valSat.textContent = (m.s * 100).toFixed(0) + '%';
+    valRed.textContent = m.rednessRatio.toFixed(2);
+    requestAnimationFrame(() => {
+      barA.style.width = (m.aSignal * 100).toFixed(0) + '%';
+      barSat.style.width = (m.satSignal * 100).toFixed(0) + '%';
+      barRed.style.width = (m.redSignal * 100).toFixed(0) + '%';
+    });
+
+    results.hidden = false;
+    setActiveStep(3);
+    results.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
+
+  setStage('idle');
+})();
+</script>
+</body>
+</html>
